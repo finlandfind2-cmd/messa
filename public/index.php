@@ -20,6 +20,7 @@ use Messa\Http\JsonResponder;
 use Messa\Http\MiddlewareRunner;
 use Messa\Http\Middleware\ErrorHandler;
 use Messa\Http\Middleware\Cors;
+use Messa\Http\Middleware\MicroserviceProxy;
 use Messa\Http\Middleware\AuthMiddleware;
 use Messa\Http\Middleware\RateLimit;
 
@@ -47,25 +48,6 @@ use Messa\Controllers\PresenceController;
 use Messa\Controllers\ContactsBlockController;
 use Messa\Controllers\UserReportsController;
 use Messa\Controllers\MediaController;
-use Messa\Controllers\CallsController;
-use Messa\Controllers\UpdatesController;
-use Messa\Controllers\AdminController;
-use Messa\Controllers\AdminStatsController;
-use Messa\Controllers\TelegramWebhookController;
-use Messa\Controllers\OAuth\YandexController;
-
-Bootstrap::init();
-
-$request = Request::fromGlobals();
-$response = new Response();
-$router = new Router();
-
-
-$router->get('/v1/health', [HealthController::class, 'check']);
-
-$router->post('/v1/auth/check_login', [AuthTelegramController::class, 'checkLogin']);
-$router->post('/v1/auth/telegram/start', [AuthTelegramController::class, 'telegramStart']);
-$router->post('/v1/auth/telegram/confirm', [AuthTelegramController::class, 'telegramConfirm']);
 
 $router->post('/v1/auth/login', [AuthPasswordController::class, 'login']);
 $router->post('/v1/auth/refresh', [AuthPasswordController::class, 'refresh']);
@@ -107,7 +89,6 @@ $router->post('/v1/chats/unpin', [PinnedChatsController::class, 'unpin']);
 $router->get('/v1/chats/pinned', [PinnedChatsController::class, 'list']);
 $router->post('/v1/chats/reorder_pinned', [PinnedChatsController::class, 'reorder']);
 
-$router->post('/v1/chats', [ChatsController::class, 'create']);
 $router->get('/v1/chats/{id}/messages', [MessagesController::class, 'list']);
 $router->post('/v1/messages', [MessagesController::class, 'create']);
 $router->post('/v1/messages/with_attachments', [MessagesController::class, 'createWithAttachments']);
@@ -135,18 +116,7 @@ $router->post('/v1/contacts/unblock', [ContactsBlockController::class, 'unblock'
 $router->get('/v1/contacts/blocked', [ContactsBlockController::class, 'list']);
 
 // Жалобы пользователей
-$router->post('/v1/users/report', [UserReportsController::class, 'report']);
-
-$router->put('/v1/messages/{id}/reactions', [ReactionsController::class, 'put']);
-$router->delete('/v1/messages/{id}/reactions/{emoji}', [ReactionsController::class, 'delete']);
-
-$router->post('/v1/chats/{id}/pins', [PinsController::class, 'add']);
-$router->delete('/v1/chats/{id}/pins/{message_id}', [PinsController::class, 'remove']);
-
-$router->post('/v1/messages/ack', [MessageReadController::class, 'ack']);
-$router->post('/v1/messages/seen', [MessageReadController::class, 'seen']);
-
-$router->get('/v1/chats/{id}', [ChatsController::class, 'get']);
+@@ -150,46 +150,47 @@ $router->get('/v1/chats/{id}', [ChatsController::class, 'get']);
 $router->patch('/v1/chats/{id}', [ChatsController::class, 'patch']);
 
 $router->get('/v1/chats/{id}/members', [ChatMembersController::class, 'list']);
@@ -172,12 +142,13 @@ $router->get('/v1/admin/messages', [AdminController::class, 'messages']);
 $router->get('/v1/admin/stats', [AdminStatsController::class, 'stats']);
 
 try {
-    $runner = new MiddlewareRunner([
-        [ErrorHandler::class, 'handle'],
-        [Cors::class, 'handle'],
-        [AuthMiddleware::class, 'handle'],
-        [RateLimit::class, 'handle'],
-    ]);
+$runner = new MiddlewareRunner([
+    [ErrorHandler::class, 'handle'],
+    [Cors::class, 'handle'],
+    [RateLimit::class, 'handle'],
+    [MicroserviceProxy::class, 'handle'],
+    [AuthMiddleware::class, 'handle'],
+]);
     
     $result = $runner->run($request, $response, function(Request $req, Response $res) use ($router) {
         $out = $router->dispatch($req, $res);
