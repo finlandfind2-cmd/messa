@@ -20,6 +20,7 @@ use Messa\Http\JsonResponder;
 use Messa\Http\MiddlewareRunner;
 use Messa\Http\Middleware\ErrorHandler;
 use Messa\Http\Middleware\Cors;
+use Messa\Http\Middleware\MicroserviceProxy;
 use Messa\Http\Middleware\AuthMiddleware;
 use Messa\Http\Middleware\RateLimit;
 
@@ -107,7 +108,6 @@ $router->post('/v1/chats/unpin', [PinnedChatsController::class, 'unpin']);
 $router->get('/v1/chats/pinned', [PinnedChatsController::class, 'list']);
 $router->post('/v1/chats/reorder_pinned', [PinnedChatsController::class, 'reorder']);
 
-$router->post('/v1/chats', [ChatsController::class, 'create']);
 $router->get('/v1/chats/{id}/messages', [MessagesController::class, 'list']);
 $router->post('/v1/messages', [MessagesController::class, 'create']);
 $router->post('/v1/messages/with_attachments', [MessagesController::class, 'createWithAttachments']);
@@ -175,8 +175,9 @@ try {
     $runner = new MiddlewareRunner([
         [ErrorHandler::class, 'handle'],
         [Cors::class, 'handle'],
-        [AuthMiddleware::class, 'handle'],
         [RateLimit::class, 'handle'],
+        [MicroserviceProxy::class, 'handle'],
+        [AuthMiddleware::class, 'handle'],
     ]);
     
     $result = $runner->run($request, $response, function(Request $req, Response $res) use ($router) {
