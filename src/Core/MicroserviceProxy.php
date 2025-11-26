@@ -9,6 +9,9 @@ use Messa\Http\Response;
 
 final class MicroserviceProxy
 {
+    /** @var array<string, mixed>|null */
+    private static ?array $cachedConfig = null;
+
     /** @var array<string, array{enabled: bool, base_url: string}> */
     private array $services;
 
@@ -228,13 +231,20 @@ final class MicroserviceProxy
      */
     private function loadConfig(): array
     {
+        if (self::$cachedConfig !== null) {
+            return self::$cachedConfig;
+        }
+
         $configPath = __DIR__ . '/../../config/microservices.php';
         if (!file_exists($configPath)) {
-            return [];
+            self::$cachedConfig = [];
+            return self::$cachedConfig;
         }
 
         $config = require $configPath;
-        return is_array($config) ? $config : [];
+        self::$cachedConfig = is_array($config) ? $config : [];
+
+        return self::$cachedConfig;
     }
 
     private function shouldSendBody(Request $req): bool
@@ -248,12 +258,24 @@ final class MicroserviceProxy
     private function prepareOutgoingHeaders(Request $req): array
     {
         $headers = [];
+        $lowered = [];
         foreach ($req->headers as $name => $value) {
             $canonical = $this->canonicalizeHeaderName($name);
             if ($canonical === 'Host') {
                 continue;
             }
             $headers[] = $canonical . ': ' . $value;
+            $lowered[strtolower($canonical)] = true;
+        }
+
+        $requestId = $this->resolveRequestId($req);
+        if ($requestId !== null) {
+            if (!isset($lowered['request-id'])) {
+                $headers[] = 'Request-Id: ' . $requestId;
+            }
+            if (!isset($lowered['x-request-id'])) {
+                $headers[] = 'X-Request-Id: ' . $requestId;
+            }
         }
 
         $headers[] = 'X-Forwarded-For: ' . $req->ip();
@@ -267,6 +289,22 @@ final class MicroserviceProxy
     {
         $parts = array_map('ucfirst', explode('-', str_replace('_', '-', strtolower($name))));
         return implode('-', $parts);
+    }
+
+    private function resolveRequestId(Request $req): ?string
+    {
+        foreach (['request-id', 'x-request-id', 'x-correlation-id'] as $header) {
+            $value = $req->header($header);
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        try {
+            return bin2hex(random_bytes(8));
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

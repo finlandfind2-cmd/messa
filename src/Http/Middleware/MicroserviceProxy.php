@@ -9,9 +9,11 @@ use Messa\Http\Response;
 
 final class MicroserviceProxy
 {
+    private static ?Proxy $instance = null;
+
     public static function handle(Request $req, Response $res, callable $next): Response
     {
-        $proxy = new Proxy();
+        $proxy = self::$instance ??= new Proxy();
         $proxied = $proxy->tryProxy($req);
         if ($proxied !== null) {
             return $proxied;
