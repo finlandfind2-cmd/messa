@@ -36,6 +36,9 @@ final class MicroserviceProxy
     private int $timeout;
     private int $connectTimeout;
 
+    private bool $stripCookies;
+    private ?string $sharedSecret;
+
     public function __construct()
     {
         $enabledGlobally = ConfigHelper::getBool('SERVICE_PROXY_ENABLED', false);
@@ -72,6 +75,10 @@ final class MicroserviceProxy
 
         $this->timeout = max(1, (int)($config['timeout'] ?? ConfigHelper::getInt('SERVICE_PROXY_TIMEOUT', 5)));
         $this->connectTimeout = max(1, (int)($config['connect_timeout'] ?? ConfigHelper::getInt('SERVICE_PROXY_CONNECT_TIMEOUT', 2)));
+
+        $this->stripCookies = (bool)($config['strip_cookies'] ?? ConfigHelper::getBool('SERVICE_PROXY_STRIP_COOKIES', false));
+        $secret = (string)($config['shared_secret'] ?? ConfigHelper::getString('SERVICE_PROXY_SHARED_SECRET', ''));
+        $this->sharedSecret = $secret !== '' ? $secret : null;
     }
 
     public function tryProxy(Request $req): ?Response
@@ -82,7 +89,7 @@ final class MicroserviceProxy
         }
 
         $config = $this->services[$service] ?? null;
-        if ($config === null || !$config['enabled'] || $config['base_url'] === '') {
+        if ($config === null || !$config['enabled'] || !$this->isAllowedBaseUrl($config['base_url'])) {
             return null;
         }
 
@@ -261,7 +268,7 @@ final class MicroserviceProxy
         $lowered = [];
         foreach ($req->headers as $name => $value) {
             $canonical = $this->canonicalizeHeaderName($name);
-            if ($canonical === 'Host') {
+            if ($canonical === 'Host' || ($this->stripCookies && $canonical === 'Cookie')) {
                 continue;
             }
             $headers[] = $canonical . ': ' . $value;
@@ -276,6 +283,10 @@ final class MicroserviceProxy
             if (!isset($lowered['x-request-id'])) {
                 $headers[] = 'X-Request-Id: ' . $requestId;
             }
+        }
+
+        if ($this->sharedSecret !== null) {
+            $headers[] = 'X-Internal-Secret: ' . $this->sharedSecret;
         }
 
         $headers[] = 'X-Forwarded-For: ' . $req->ip();
@@ -336,5 +347,24 @@ final class MicroserviceProxy
         }
 
         return $headers;
+    }
+
+    private function isAllowedBaseUrl(string $baseUrl): bool
+    {
+        if ($baseUrl === '') {
+            return false;
+        }
+
+        $parsed = parse_url($baseUrl);
+        if ($parsed === false) {
+            return false;
+        }
+
+        $scheme = strtolower($parsed['scheme'] ?? '');
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+
+        return isset($parsed['host']);
     }
 }

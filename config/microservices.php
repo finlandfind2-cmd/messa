@@ -5,6 +5,8 @@ declare(strict_types=1);
 return [
     'timeout' => (int)(getenv('SERVICE_PROXY_TIMEOUT') ?: 5),
     'connect_timeout' => (int)(getenv('SERVICE_PROXY_CONNECT_TIMEOUT') ?: 2),
+    'strip_cookies' => getenv('SERVICE_PROXY_STRIP_COOKIES') !== false ? filter_var(getenv('SERVICE_PROXY_STRIP_COOKIES'), FILTER_VALIDATE_BOOLEAN) : false,
+    'shared_secret' => getenv('SERVICE_PROXY_SHARED_SECRET') ?: null,
 
     // Path prefixes for routing requests to dedicated services.
     'path_map' => [
